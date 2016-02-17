@@ -4,21 +4,16 @@
             [taoensso.timbre :as log]
             [onyx.api]
             [onyx.plugin.kafka] ;;must be in classpath
-            ;; for testing only, no extra dependencies added
+            ;; for boot-local-sytem (testing) only, no extra dependencies added
             [onyx.log.zookeeper :refer [zookeeper]]
             [onyx.kafka.embedded-server :as ke]
-            [clj-kafka.zk :as zk]
-            [clj-kafka.producer :as kp]
-            [clj-kafka.new.producer :as nkp]
-            ;; end for testing only
-
+            [clj-kafka.admin :as ka]
+            ;; end boot-local-sytem
             [bones.conf :as conf]))
 
 
 (defrecord OnyxPeers [n-peers onyx-peer-group conf]
   component/Lifecycle
-  ;; requires OnyxPeerGroup
-  ;; using dependecy injection of n-peers onyx-peer-group
   (start [cmp]
     (if (:peers cmp)
       (do
@@ -26,7 +21,7 @@
         cmp)
       (do
         (log/info "Starting Onyx Peers")
-        (let [npeers (or (:onyx.peer/n-peers conf) n-peers 4)]
+        (let [npeers (or (:onyx.peer/n-peers conf) n-peers 3)]
           (assoc cmp
                  :peers
                  (onyx.api/start-peers npeers (:peer-group onyx-peer-group)))))))
@@ -36,10 +31,10 @@
         (log/info "Stopping Onyx Peers")
         (doseq [v-peer (:peers cmp)]
           (try
+            ;; jobs should have already stopped so this should be quick
             (onyx.api/shutdown-peer v-peer)
             (catch InterruptedException e
               (log/warn "Peer not shutting down: " (.getMessage e)))))
-        ;; maybe optionally wait for completion(?)
         (dissoc cmp :peers))
       (do
         (log/info "Onyx peers is not running")
@@ -90,6 +85,8 @@
   (stop [cmp]
     (if (:zookeeper cmp)
       (do
+        ;; todo: somehow wait for zookeeper to actually stop
+        ;; we might have to go to the process level here to be sure
         (.stop (:zookeeper cmp))
         (dissoc cmp :zookeeper))
       (do
@@ -113,7 +110,12 @@
       (do
         (log/info "Kafka is already running")
         cmp)
-      (let [{:keys [:kafka/hostname :kafka/port :kafka/broker-id :kafka/log-dir :kafka/num-partitions :zookeeper-addr ]} conf
+      (let [{:keys [:kafka/hostname
+                    :kafka/port
+                    :kafka/broker-id
+                    :kafka/log-dir
+                    :kafka/num-partitions
+                    :zookeeper-addr]} conf
             kconf {:hostname hostname
                    :port port
                    :broker-id broker-id
@@ -139,16 +141,27 @@
         (log/info "Job is already running")
         cmp)
       (do
-        ;; initialize (create) topics in case they don't exist
+        ;; create topics if they don't exist
         (let [topics (remove nil? (map :kafka/topic (:catalog job)))
-              {:keys [:kafka/hostname :kafka/port]} conf ;; hmm, only one host here?
-              producer (nkp/producer {"bootstrap.servers" (str hostname ":" port)}
-                                     (nkp/byte-array-serializer)
-                                     (nkp/byte-array-serializer))]
+              zk (ka/zk-client (:zookeeper-addr conf))]
           (doseq [topic topics]
-            (nkp/send producer (nkp/record topic
-                                           (.getBytes "init")
-                                           (.getBytes (prn-str {:segment "init"}))))))
+            (if-not (ka/topic-exists? zk topic)
+                    (do
+                      (ka/create-topic zk topic)
+                      (log/info "created topic: " topic)))))
+
+
+        ;; initialize (create) topics in case they don't exist
+        ;; todo: check explicitly first
+        ;; (let [topics (remove nil? (map :kafka/topic (:catalog job)))
+        ;;       {:keys [:kafka/hostname :kafka/port]} conf ;; hmm, only one host here?
+        ;;       producer (nkp/producer {"bootstrap.servers" (str hostname ":" port)}
+        ;;                              (nkp/byte-array-serializer)
+        ;;                              (nkp/byte-array-serializer))]
+        ;;   (doseq [topic topics]
+        ;;     (nkp/send producer (nkp/record topic
+        ;;                                    (.getBytes "init")
+        ;;                                    (.getBytes (prn-str {:segment "init"}))))))
         ;; assume zookeeper is already started
         (let [peer-conf (assoc conf :zookeeper/server? false)
               ;; do it finally
