@@ -6,7 +6,7 @@
             [matcha :as m]))
 
 (defn dummy-x [segment]
-  {:another "segment"})
+  (assoc segment :another "segment jazz yeah"))
 
 (defn validate-job [job]
   ;; taken from the onyx/api.clj
@@ -18,6 +18,7 @@
   (validator/validate-triggers (:triggers job) (:windows job)))
 
 
+;; taken from the onyx
 (defn discover-tasks [job]
   (planning/discover-tasks (:catalog job) (:workflow job)))
 
