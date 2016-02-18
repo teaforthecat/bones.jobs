@@ -98,3 +98,10 @@
   (if (= {} @sys) (throw (ex-info "system not yet created, use boot-local-system or boot-onyx-system" {})))
   (system/stop-system sys :conf :onyx-peer-group :onyx-peers)
   (system/start-system sys :conf :onyx-peer-group :onyx-peers))
+
+(defn new-producer
+  "creates new kafka producer
+  (let [p (new-producer)]
+    (.produce p topic key data))"
+  []
+  (system/new-component @sys :producer :conf))

@@ -9,10 +9,13 @@
                  [com.cognitect/transit-clj "0.8.285"]
                  ]
 
+
   :profiles {:test
              {:dependencies [[matcha "0.1.0"]
                              ;; conf's test dependencies are my test dependencies?????????????????
-                             [clj-yaml "0.4.0"]
-                             [clojurewerkz/propertied "1.2.0"]]}}
+                             ;; not sure what is happening here
+                             ;; [clj-yaml "0.4.0"]
+                             ;; [clojurewerkz/propertied "1.2.0"]
+                             ]}}
 
   )

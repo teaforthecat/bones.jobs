@@ -9,8 +9,47 @@
             [onyx.kafka.embedded-server :as ke]
             [clj-kafka.admin :as ka]
             ;; end boot-local-sytem
+            ;; producer
+            [clj-kafka.zk :as zk :refer [broker-list brokers]]
+            [clj-kafka.new.producer :as nkp]
+            ;; end producer
+            [bones.jobs.serializer :as serializer]
             [bones.conf :as conf]))
 
+(defprotocol Produce
+  (produce [cmp topic key data]))
+
+(defrecord Producer [conf]
+  component/Lifecycle
+  (start [cmp]
+    (if (:producer cmp)
+      (do
+        (log/info "producer already started")
+        cmp)
+      (let [conf (:conf cmp)
+            kafka-brokers (brokers {"zookeeper.connect" (:zookeeper-addr conf)})
+            bootstrap-servers (broker-list kafka-brokers)
+            data-format (or (:bones.kafka/data-format conf) serializer/default-data-format)
+            serializer (serializer/transit-encoder data-format)]
+        (-> cmp
+            (assoc :serializer serializer)
+            (assoc :producer (nkp/producer {"bootstrap.servers" bootstrap-servers}
+                                           (nkp/byte-array-serializer)
+                                           (nkp/byte-array-serializer)))))))
+  (stop [cmp]
+    (if-let [producer (:producer cmp)]
+      (.close producer))
+    (dissoc cmp :producer))
+  Produce
+  (produce [cmp topic key data]
+    (if (:producer cmp)
+      (let [bytes ((:serializer cmp) data)
+            key-bytes (.getBytes (str key)) ;; this is all necessary. I know.
+            record (nkp/record topic key-bytes bytes)]
+        (nkp/send (:producer cmp) record))
+      (do
+        (log/info "no producer")
+        cmp))))
 
 (defrecord OnyxPeers [n-peers onyx-peer-group conf]
   component/Lifecycle
@@ -149,19 +188,6 @@
                     (do
                       (ka/create-topic zk topic)
                       (log/info "created topic: " topic)))))
-
-
-        ;; initialize (create) topics in case they don't exist
-        ;; todo: check explicitly first
-        ;; (let [topics (remove nil? (map :kafka/topic (:catalog job)))
-        ;;       {:keys [:kafka/hostname :kafka/port]} conf ;; hmm, only one host here?
-        ;;       producer (nkp/producer {"bootstrap.servers" (str hostname ":" port)}
-        ;;                              (nkp/byte-array-serializer)
-        ;;                              (nkp/byte-array-serializer))]
-        ;;   (doseq [topic topics]
-        ;;     (nkp/send producer (nkp/record topic
-        ;;                                    (.getBytes "init")
-        ;;                                    (.getBytes (prn-str {:segment "init"}))))))
         ;; assume zookeeper is already started
         (let [peer-conf (assoc conf :zookeeper/server? false)
               ;; do it finally
@@ -220,12 +246,17 @@
                            [:kafka :conf])
 
          :onyx-peers (component/using
-                      (map->OnyxPeers {:n-peers 4})
+                      (map->OnyxPeers {})
                       [:onyx-peer-group :conf])
 
          :jobs (component/using
                 (map->Jobs {})
-                [:onyx-peers :conf]))))
+                [:onyx-peers :conf])
+
+         ;; this should be started separately
+         :producer (component/using
+                    (map->Producer {})
+                    [:conf]))))
 
 (defn submit-job
   "adds job to jobs list under the :jobs component"
@@ -241,3 +272,6 @@
 
 (defn stop-system [system & components]
   (swap! system component/update-system-reverse components component/stop))
+
+(defn new-component [system component & dependencies]
+  (get (component/update-system system (conj dependencies component) component/start) component))
