@@ -5,7 +5,7 @@
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :dependencies [[org.clojure/clojure "1.8.0"]
                  [org.onyxplatform/onyx-kafka "0.8.10.0"]
-                 [bones.conf "0.1.2"]
+                 [bones.conf "0.1.3"]
                  [com.cognitect/transit-clj "0.8.285"]
                  ]
 
@@ -18,6 +18,7 @@
                              ;; [clojurewerkz/propertied "1.2.0"]
                              ]}
              :jvm-args ["-Daeron.dir.delete.on.exit"]
-             }
+             ;; add :test to default so deps aren't propagated
+             :default [:base :system :user :provided :dev :test]}
 
   )
