@@ -6,6 +6,9 @@ A Clojure library designed to ease the setup and configuration of an
 [onyx](http://www.onyxplatform.org) and
 [kafka](http://kafka.apache.org) based application.
 
+
+![travis status](https://api.travis-ci.org/teaforthecat/bones.jobs.svg)
+
 A component system-map is provided so that all the required components
 can be started with one function.
 
